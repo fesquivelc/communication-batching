@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: migrationJob
+    # mssql datasource
+  datasource:
+    url: jdbc:sqlserver://52.242.85.205:1433;databaseName=communicationdb;trustServerCertificate=true
+    username: odoo
+    password: '*77@N>.e5i%6&WGm'
+    driver-class-name: com.microsoft.sqlserver.jdbc.SQLServerDriver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      idle-timeout: 30000
+      connection-timeout: 30000
+odoo:
+  url: http://localhost:20017
+  username: admin
+  password: odoo
+  database: lavoro17009
+jobParameters:
+  chunkSize: 200
+logging:
+  level:
+    root: INFO
+    org.springframework.jdbc.core: DEBUG
+    org.springframework.jdbc.core.StatementCreatorUtils: TRACE
+    org.springframework.batch.item.database: DEBUG
+    org.springframework.batch: DEBUG

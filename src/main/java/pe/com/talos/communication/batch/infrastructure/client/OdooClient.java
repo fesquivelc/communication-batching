@@ -1,6 +1,7 @@
 package pe.com.talos.communication.batch.infrastructure.client;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JavaType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -27,11 +28,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Slf4j
 @RequiredArgsConstructor
 public class OdooClient {
+    private final static String RPC_VERSION = "2.0";
+    private final static String USER_AGENT = "Odoo Java Native Client 1.0";
+    private final static String CONTENT_TYPE = "application/json";
+    private final static int TIMEOUT_SECONDS = 30;
+    private final static int STATUS_OK = 200;
+    private final AtomicInteger requestId = new AtomicInteger(1);
     private final OdooConfig config;
     private ObjectMapper mapper;
     private HttpClient httpClient;
-    private final AtomicInteger requestId = new AtomicInteger(1);
-    private final String rpcVersion = "2.0";
     private Integer uid;
     private URI endpoint;
 
@@ -47,27 +52,26 @@ public class OdooClient {
     public <P, R> R call(String method, P params, Class<R> resultClass) {
         try {
             int id = requestId.getAndIncrement();
-            JsonRpcRequest<P> request = new JsonRpcRequest<>("2.0", method, params, id);
+            JsonRpcRequest<P> request = new JsonRpcRequest<>(RPC_VERSION, method, params, id);
 
             String json;
 
             json = mapper.writeValueAsString(request);
 
             HttpRequest httpRequest = HttpRequest.newBuilder(endpoint)
-                    .header("Content-Type", "application/json")
-                    .header("User-Agent", "Odoo Java Native Client 1.0")
+                    .header("Content-Type", CONTENT_TYPE)
+                    .header("User-Agent", USER_AGENT)
                     .POST(HttpRequest.BodyPublishers.ofString(json))
                     .build();
 
             HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString());
 
-            if (response.statusCode() != 200) {
+            if (response.statusCode() != STATUS_OK) {
                 throw new OdooException("Error HTTP: " + response.statusCode() + " " + response.body());
             }
 
-            // Usamos TypeReference para soportar el genérico en la respuesta
-            JsonRpcResponse<R> rpcResponse = mapper.readValue(response.body(),
-                    mapper.getTypeFactory().constructParametricType(JsonRpcResponse.class, resultClass));
+            JavaType resultType = mapper.getTypeFactory().constructParametricType(JsonRpcResponse.class, resultClass);
+            JsonRpcResponse<R> rpcResponse = mapper.readValue(response.body(), resultType);
 
             if (rpcResponse.error() != null) {
                 if (rpcResponse.error().data() != null) {
@@ -148,7 +152,7 @@ public class OdooClient {
 //        return jsonRpcResponse;
 //    }
 
-    public <R> R executeMethod(String model, String method, List<Object> args, Map<String, Object> kwargs) {
+    public <R> R executeMethod(String model, String method, List<Object> args, Map<String, Object> kwargs, Class<R> resultCass) {
         checkAuthentication();
 
         try {
@@ -158,18 +162,11 @@ public class OdooClient {
                     List.of(config.getDatabase(), uid, config.getPassword(), model, method, args, kwargs)
             );
 
-            var response = call("call", params, JsonRpcResponse.class);
-
-            if (response.error() != null) {
-                log.error("Error ejecutando método {}: {}", method, response.error());
-                return null;
-            }
-
-            return response.result();
+            return call("call", params, resultCass);
 
         } catch (Exception e) {
             log.error("Error ejecutando método {}", method, e);
-            return null;
+            throw new OdooException("Error con executeMethod", e);
         }
     }
 
